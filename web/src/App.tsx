@@ -13,7 +13,8 @@ import { Slider } from '@/components/ui/slider'
 import { Toaster } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { api, type Analysis, type Settings, type Take, type Voice } from '@/lib/api'
+import Finetune from '@/Finetune'
+import { api, type Analysis, type ModelInfo, type Settings, type Take, type Voice } from '@/lib/api'
 import { DEFAULTS, LANGS, MARKERS, PHRASES, PRESETS, SLANG_EXAMPLES, TEMPLATES } from '@/lib/presets'
 
 type HistoryItem = { id: string; voice: string; text: string; elapsed: number; takes: Take[] }
@@ -62,6 +63,8 @@ function SwitchField(p: { label: string; hint?: string; checked: boolean; onChan
 export default function App() {
   const [gpu, setGpu] = useState<string | null | undefined>(undefined)
   const [f5, setF5] = useState(false)
+  const [view, setView] = useState<'studio' | 'finetune'>('studio')
+  const [models, setModels] = useState<ModelInfo[]>([])
   const [voices, setVoices] = useState<Voice[]>([])
   const [voice, setVoice] = useState('')
   const [text, setText] = useState(() => localStorage.getItem('vs.text') ?? SAMPLE)
@@ -91,6 +94,17 @@ export default function App() {
     setVoices(v)
     setVoice((cur) => (v.some((x) => x.name === cur) ? cur : (v[0]?.name ?? '')))
   }, [])
+
+  const loadModels = useCallback(async () => {
+    try {
+      const m = await api.models()
+      setModels(m)
+      // a model that was deleted can no longer be selected
+      setS((o) => (o.model !== 'base' && !m.some((x) => x.name === o.model) ? { ...o, model: 'base' } : o))
+    } catch { /* backend may be older; the picker just shows the base model */ }
+  }, [])
+
+  useEffect(() => { loadModels() }, [loadModels])
 
   useEffect(() => {
     document.documentElement.classList.add('dark')
@@ -231,10 +245,15 @@ export default function App() {
             <AudioLines className="size-5" />
             <h1 className="text-lg font-semibold tracking-tight">Voice Studio</h1>
           </div>
+          <nav className="flex gap-1" aria-label="Sections">
+            <Button variant={view === 'studio' ? 'secondary' : 'ghost'} size="sm" onClick={() => setView('studio')}>Studio</Button>
+            <Button variant={view === 'finetune' ? 'secondary' : 'ghost'} size="sm" onClick={() => setView('finetune')}>Fine-tune</Button>
+          </nav>
           <Badge variant={gpu ? 'default' : 'secondary'}>{gpu === undefined ? 'Checking…' : gpu ?? 'CPU only'}</Badge>
         </div>
       </header>
 
+      {view === 'finetune' ? <Finetune onModelsChanged={loadModels} /> : (
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[300px_1fr]">
         <Card className="h-fit">
           <CardHeader>
@@ -435,6 +454,18 @@ export default function App() {
                         </SelectContent>
                       </Select>
                     ))}
+                    {field('Model (XTTS)', (
+                      <Select value={s.model} onValueChange={(v) => v && set('model', v)}>
+                        <SelectTrigger className="w-full"><SelectValue>{s.model === 'base' ? 'Base XTTS-v2' : s.model}</SelectValue></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="base">Base XTTS-v2</SelectItem>
+                          {models.map((m) => <SelectItem key={m.name} value={m.name}>{m.name} (fine-tuned)</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                      Train your own model in the <b>Fine-tune</b> tab to capture your accent. Switching models takes about a minute the first time. The F5 engine always uses its own model.
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       XTTS tends to pull English toward an American accent. F5-TTS copies the accent and rhythm of your reference clip much more closely, but only supports English. It uses a short (about 10 s) part of your clip, so run <b>Clean up</b> on the voice first. Be aware: on a 4 GB GTX 1650 Ti it is slow, roughly 10x slower than real time (a 1-minute script can take 10+ minutes), so use it for short, important clips. Expressiveness, top-p, top-k and repetition settings apply to XTTS only.
                     </p>
@@ -580,6 +611,7 @@ export default function App() {
           )}
         </div>
       </main>
+      )}
     </div>
   )
 }
