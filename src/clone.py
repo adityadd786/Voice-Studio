@@ -33,6 +33,7 @@ class Cancelled(Exception):
 class Options:
     lang: str = "en"
     engine: str = "xtts"
+    model: str = "base"          # "base" or a fine-tuned model name in models/
     speed: float = 1.0
     gap: float = 0.25            # between sentences
     para_gap: float = 0.6        # between paragraphs
@@ -57,33 +58,71 @@ class Options:
     pronunciations: list = field(default_factory=list)  # [(find, say), ...]
 
 
-_XTTS = None
+_XTTS_MODEL = None   # the loaded Xtts model object
+_XTTS_HOLD = None    # keeps the TTS wrapper alive for the base model
+_XTTS_KEY = None     # "base" or the name of a fine-tuned model in models/
 _LATENTS = {}
+MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+MODEL_FILES = ("model.pth", "config.json", "vocab.json", "speakers_xtts.pth")
 
 
-def load_xtts():
-    global _XTTS
-    if _XTTS is None:
-        import torch
+def list_models():
+    """Fine-tuned XTTS models imported into models/<name>/."""
+    out = []
+    if os.path.isdir(MODELS_DIR):
+        for n in sorted(os.listdir(MODELS_DIR)):
+            d = os.path.join(MODELS_DIR, n)
+            if all(os.path.isfile(os.path.join(d, f)) for f in MODEL_FILES):
+                out.append({"name": n, "size_mb": round(os.path.getsize(os.path.join(d, "model.pth")) / 1e6)})
+    return out
+
+
+def load_xtts(key="base"):
+    """Load (or switch) the XTTS model. Only one is kept in memory because VRAM is small."""
+    global _XTTS_MODEL, _XTTS_HOLD, _XTTS_KEY
+    if _XTTS_MODEL is not None and _XTTS_KEY == key:
+        return _XTTS_MODEL
+    import gc
+    import torch
+    _XTTS_MODEL = _XTTS_HOLD = None
+    _LATENTS.clear()      # voice analysis depends on the model weights
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if key == "base":
         from TTS.api import TTS
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
-        _XTTS = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(dev)
-    return _XTTS
+        _XTTS_HOLD = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(dev)
+        _XTTS_MODEL = _XTTS_HOLD.synthesizer.tts_model
+    else:
+        from TTS.tts.configs.xtts_config import XttsConfig
+        from TTS.tts.models.xtts import Xtts
+        d = os.path.join(MODELS_DIR, key)
+        if not os.path.isfile(os.path.join(d, "model.pth")):
+            raise FileNotFoundError(f"Fine-tuned model '{key}' not found")
+        cfg = XttsConfig()
+        cfg.load_json(os.path.join(d, "config.json"))
+        m = Xtts.init_from_config(cfg)
+        m.load_checkpoint(cfg, checkpoint_dir=d, use_deepspeed=False)  # also switches to eval mode
+        m.to(dev)
+        _XTTS_MODEL = m
+    _XTTS_KEY = key
+    return _XTTS_MODEL
 
 
-def latents_for(ref, ref_seconds):
+def latents_for(ref, ref_seconds, model_key="base"):
     """Voice analysis is slow; cache per reference file."""
     key = (ref, os.path.getmtime(ref), ref_seconds)
     if key not in _LATENTS:
-        model = load_xtts().synthesizer.tts_model
+        model = load_xtts(model_key)
         _LATENTS[key] = model.get_conditioning_latents(
             audio_path=[ref], gpt_cond_len=ref_seconds, gpt_cond_chunk_len=6, max_ref_length=ref_seconds)
     return _LATENTS[key]
 
 
 def synth_xtts(text, ref, lang, speed, o: Options):
-    model = load_xtts().synthesizer.tts_model
-    gpt, spk = latents_for(ref, o.ref_seconds)
+    model = load_xtts(o.model)
+    gpt, spk = latents_for(ref, o.ref_seconds, o.model)
     out = model.inference(
         text, lang, gpt, spk, temperature=o.temperature, top_p=o.top_p, top_k=o.top_k,
         repetition_penalty=o.repetition_penalty, speed=speed, enable_text_splitting=False)
