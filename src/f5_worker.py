@@ -21,6 +21,19 @@ def transcribe(ref, out):
     print("TEXT", text, flush=True)
 
 
+def transcribe_many(job_path):
+    """Transcribe many clips with one model load. Prints 'DONE i' per clip."""
+    from faster_whisper import WhisperModel
+    job = json.load(open(job_path, encoding="utf-8"))
+    model = WhisperModel("small", device="cpu", compute_type="int8")
+    texts = []
+    for i, clip in enumerate(job["clips"]):
+        segs, _ = model.transcribe(clip, language="en", beam_size=3, vad_filter=False)
+        texts.append(" ".join(s.text.strip() for s in segs).strip())
+        print("DONE", i, flush=True)
+    json.dump(texts, open(job["out"], "w", encoding="utf-8"))
+
+
 def synth(job_path):
     import soundfile as sf
     import torch
@@ -42,5 +55,7 @@ def synth(job_path):
 if __name__ == "__main__":
     if sys.argv[1] == "transcribe":
         transcribe(sys.argv[2], sys.argv[3])
+    elif sys.argv[1] == "transcribe_many":
+        transcribe_many(sys.argv[2])
     elif sys.argv[1] == "synth":
         synth(sys.argv[2])
