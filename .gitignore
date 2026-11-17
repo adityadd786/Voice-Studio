@@ -8,6 +8,9 @@ refs/
 out/
 voices/
 cache/
+datasets/
+models/
+*.zip
 *.wav
 *.mp3
 *.m4a
