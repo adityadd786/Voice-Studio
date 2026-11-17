@@ -61,6 +61,7 @@ function SwitchField(p: { label: string; hint?: string; checked: boolean; onChan
 
 export default function App() {
   const [gpu, setGpu] = useState<string | null | undefined>(undefined)
+  const [f5, setF5] = useState(false)
   const [voices, setVoices] = useState<Voice[]>([])
   const [voice, setVoice] = useState('')
   const [text, setText] = useState(() => localStorage.getItem('vs.text') ?? SAMPLE)
@@ -93,7 +94,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.classList.add('dark')
-    api.status().then((r) => setGpu(r.cuda ? r.gpu : null)).catch(() => setGpu(null))
+    api.status().then((r) => { setGpu(r.cuda ? r.gpu : null); setF5(r.f5) }).catch(() => setGpu(null))
     loadVoices().catch(() => toast.error('Backend not reachable. Start the API server on port 8010.'))
   }, [loadVoices])
 
@@ -423,6 +424,20 @@ export default function App() {
                 <AccordionItem value="voice">
                   <AccordionTrigger>Voice & expression</AccordionTrigger>
                   <AccordionContent className="space-y-5 pt-2">
+                    {field('Voice engine', (
+                      <Select value={s.engine} onValueChange={(v) => v && set('engine', v as Settings['engine'])}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue>{s.engine === 'f5' ? 'F5-TTS (English, follows your accent)' : 'XTTS-v2 (17 languages)'}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="xtts">XTTS-v2 (17 languages)</SelectItem>
+                          <SelectItem value="f5" disabled={!f5}>F5-TTS (English, follows your accent){f5 ? '' : ' – not installed'}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                      XTTS tends to pull English toward an American accent. F5-TTS copies the accent and rhythm of your reference clip much more closely, but only supports English. It uses a short (about 10 s) part of your clip, so run <b>Clean up</b> on the voice first. Be aware: on a 4 GB GTX 1650 Ti it is slow, roughly 10x slower than real time (a 1-minute script can take 10+ minutes), so use it for short, important clips. Expressiveness, top-p, top-k and repetition settings apply to XTTS only.
+                    </p>
                     <SliderField label="Expressiveness (temperature)" value={s.temperature} min={0.1} max={1.2} step={0.05}
                       fmt={(v) => v.toFixed(2)} onChange={(v) => set('temperature', v)}
                       hint="Low = steady and consistent. High = more emotion and variation, but more glitches." />

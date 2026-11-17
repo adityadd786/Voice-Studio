@@ -21,6 +21,7 @@ export type Job = {
 }
 
 export type Settings = {
+  engine: 'xtts' | 'f5'
   lang: string
   speed: number
   gap: number
@@ -64,7 +65,7 @@ export function parsePronunciations(raw: string): [string, string][] {
 }
 
 export const api = {
-  status: () => fetch('/api/status').then(json<{ cuda: boolean; gpu: string | null; langs: string[] }>),
+  status: () => fetch('/api/status').then(json<{ cuda: boolean; gpu: string | null; langs: string[]; f5: boolean }>),
   voices: () => fetch('/api/voices').then(json<Voice[]>),
   addVoice: (name: string, file: File) => {
     const fd = new FormData()
@@ -88,7 +89,7 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        voice, text, lang: s.lang, speed: s.speed, gap: s.gap, para_gap: s.paraGap,
+        voice, text, engine: s.engine, lang: s.lang, speed: s.speed, gap: s.gap, para_gap: s.paraGap,
         duration: s.fit ? s.duration : null, temperature: s.temperature, top_p: s.topP, top_k: s.topK,
         repetition_penalty: s.repetitionPenalty, seed: s.seed.trim() === '' ? null : Number(s.seed),
         ref_seconds: s.refSeconds, pitch: s.pitch, gain_db: s.gainDb, normalize: s.normalize,

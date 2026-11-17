@@ -1,7 +1,7 @@
 import type { Settings } from './api'
 
 export const DEFAULTS: Settings = {
-  lang: 'en', speed: 1, gap: 0.25, paraGap: 0.6, fit: false, duration: 30,
+  engine: 'xtts', lang: 'en', speed: 1, gap: 0.25, paraGap: 0.6, fit: false, duration: 30,
   temperature: 0.75, topP: 0.85, topK: 50, repetitionPenalty: 10, seed: '', refSeconds: 30,
   pitch: 0, gainDb: 0, normalize: false, trim: true, casual: false, indianText: false, techTerms: false, smartPace: false, pronunciations: '',
   takes: 1, format: 'wav',
