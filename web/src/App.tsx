@@ -14,7 +14,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { api, type Settings, type Take, type Voice } from '@/lib/api'
-import { DEFAULTS, LANGS, MARKERS, PRESETS, SLANG_EXAMPLES } from '@/lib/presets'
+import { DEFAULTS, LANGS, MARKERS, PHRASES, PRESETS, SLANG_EXAMPLES, TEMPLATES } from '@/lib/presets'
 
 type HistoryItem = { id: string; voice: string; text: string; elapsed: number; takes: Take[] }
 
@@ -235,6 +235,24 @@ export default function App() {
                   <FileText className="size-4" /> Load .txt
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Start from a template:</span>
+                {TEMPLATES.map((t) => (
+                  <Button key={t.label} variant="secondary" size="sm" onClick={() => setText(t.text)}>{t.label}</Button>
+                ))}
+              </div>
+              <details className="rounded-lg border px-3 py-2">
+                <summary className="cursor-pointer text-sm">Friendly phrases (click to insert)</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PHRASES.map((p) => (
+                    <Button key={p.label} variant="outline" size="sm" onClick={() => insertMarker(p.text)}>{p.label}</Button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Hindi phrases are written in Devanagari with <code>[lang hi]</code> … <code>[lang en]</code> so they are pronounced properly.
+                  Hindi in Roman letters would be read with English sounds.
+                </p>
+              </details>
               <Textarea ref={areaRef} rows={9} value={text} onChange={(e) => setText(e.target.value)}
                 placeholder="Type what the voice should say…" />
               <p className="text-xs text-muted-foreground">
@@ -284,6 +302,23 @@ export default function App() {
                   </AccordionContent>
                 </AccordionItem>
 
+                <AccordionItem value="style">
+                  <AccordionTrigger>Course & explanation style</AccordionTrigger>
+                  <AccordionContent className="space-y-5 pt-2">
+                    <SwitchField label="Teaching-style pacing" checked={s.smartPace} onChange={(v) => set('smartPace', v)}
+                      hint="Pauses after questions and colons, a longer pause at “…”, and slightly slower delivery for definitions and key points (“for example”, “remember”, “step 2”)." />
+                    <SwitchField label="Tech & course terms" checked={s.techTerms} onChange={(v) => set('techTerms', v)}
+                      hint="Reads API, SQL, AWS, UPI, GST, GitHub, Kubernetes and similar terms correctly. Your own dictionary entries win." />
+                    <SwitchField label="Indian amounts (lakh / crore)" checked={s.indianText} onChange={(v) => set('indianText', v)}
+                      hint="₹5,00,000 is read as “five lakh rupees” and Rs. 2.5 crore as “two point five crore rupees”." />
+                    <SwitchField label="Casual speech (English)" checked={s.casual} onChange={(v) => set('casual', v)}
+                      hint="“going to” becomes “gonna”, “want to” becomes “wanna”, and so on." />
+                    <p className="text-xs text-muted-foreground">
+                      Tip: write for the ear. Short sentences, one idea each, read much better than long ones. Listen once, then fix the places that sound rushed with a <code>[pause]</code> or <code>[speed 0.9]</code>.
+                    </p>
+                  </AccordionContent>
+                </AccordionItem>
+
                 <AccordionItem value="voice">
                   <AccordionTrigger>Voice & expression</AccordionTrigger>
                   <AccordionContent className="space-y-5 pt-2">
@@ -297,7 +332,7 @@ export default function App() {
                       fmt={(v) => `${v}s`} onChange={(v) => set('refSeconds', v)}
                       hint="How much of your reference clip is studied. Longer usually clones more closely." />
                     <p className="text-xs text-muted-foreground">
-                      Accent and speaking style are copied from your reference clip. To change them, upload a clip in that accent or style.
+                      Accent and speaking style are copied from your reference clip, not from any setting. For an Indian-English accent, use a clean clip of an Indian-English speaker (your own voice works). For a friendlier, more casual delivery, record the clip in that tone.
                     </p>
                   </AccordionContent>
                 </AccordionItem>
@@ -316,8 +351,6 @@ export default function App() {
                     <p className="text-xs text-muted-foreground">
                       Switch language mid-script with <code>[lang hi]</code>. Write each language in its own script (e.g. Hindi in Devanagari).
                     </p>
-                    <SwitchField label="Casual speech (English)" checked={s.casual} onChange={(v) => set('casual', v)}
-                      hint="Writes “going to” as “gonna”, “want to” as “wanna”, “kind of” as “kinda”, and so on, so it sounds spoken." />
                     <div className="space-y-2">
                       <Label>Pronunciation dictionary</Label>
                       <Textarea rows={4} value={s.pronunciations} onChange={(e) => set('pronunciations', e.target.value)}
