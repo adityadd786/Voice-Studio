@@ -32,7 +32,8 @@ JOBS: dict[str, dict] = {}
 
 
 def safe_name(name: str) -> str:
-    name = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip())[:40]
+    name = re.sub(r"[^A-Za-z0-9 _-]", "_", name.strip())
+    name = re.sub(r"\s+", " ", name)[:40].strip()
     if not name:
         raise HTTPException(400, "Invalid name")
     return name
@@ -90,6 +91,21 @@ async def add_voice(name: str = Form(...), file: UploadFile = File(...)):
 def delete_voice(name: str):
     os.remove(voice_path(name))
     return {"ok": True}
+
+
+class RenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
+@app.post("/api/voices/{name}/rename")
+def rename_voice(name: str, req: RenameRequest):
+    src = voice_path(name)
+    new = safe_name(req.name)
+    dest = os.path.join(REFS, new + ".wav")
+    if os.path.abspath(src).lower() != os.path.abspath(dest).lower() and os.path.exists(dest):
+        raise HTTPException(409, f"A voice named '{new}' already exists")
+    os.replace(src, dest)
+    return {"name": new, "duration": round(sf.info(dest).duration, 1)}
 
 
 @app.get("/api/voices/{name}/audio")
