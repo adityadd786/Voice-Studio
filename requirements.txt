@@ -1,0 +1,7 @@
+# Install torch/torchaudio first:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+coqui-tts
+f5-tts
+soundfile
+numpy
+gradio
