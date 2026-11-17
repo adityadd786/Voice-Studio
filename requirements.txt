@@ -4,4 +4,7 @@ coqui-tts
 f5-tts
 soundfile
 numpy
-gradio
+fastapi
+uvicorn
+python-multipart
+six
