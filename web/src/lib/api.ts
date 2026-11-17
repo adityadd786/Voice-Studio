@@ -1,4 +1,4 @@
-export type Voice = { name: string; duration: number }
+﻿export type Voice = { name: string; duration: number }
 export type Take = { file: string; seconds: number; seed: number }
 export type Job = {
   status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -26,6 +26,9 @@ export type Settings = {
   normalize: boolean
   trim: boolean
   casual: boolean
+  indianText: boolean
+  techTerms: boolean
+  smartPace: boolean
   pronunciations: string // "word = say" per line
   takes: number
   format: 'wav' | 'mp3'
@@ -68,7 +71,7 @@ export const api = {
         duration: s.fit ? s.duration : null, temperature: s.temperature, top_p: s.topP, top_k: s.topK,
         repetition_penalty: s.repetitionPenalty, seed: s.seed.trim() === '' ? null : Number(s.seed),
         ref_seconds: s.refSeconds, pitch: s.pitch, gain_db: s.gainDb, normalize: s.normalize,
-        trim: s.trim, casual: s.casual, pronunciations: parsePronunciations(s.pronunciations),
+        trim: s.trim, casual: s.casual, indian_text: s.indianText, tech_terms: s.techTerms, smart_pace: s.smartPace, pronunciations: parsePronunciations(s.pronunciations),
         takes: s.takes, format: s.format,
       }),
     }).then(json<{ job: string }>),
