@@ -7,9 +7,10 @@ def _db(x, floor=1e-8):
     return 20 * np.log10(np.maximum(x, floor))
 
 
-def clean_reference(src, dest, max_seconds=30, gap=0.15, top_db=38):
+def clean_reference(src, dest, max_seconds=30, gap=0.15, top_db=38, fit=False):
     """Cut digital silence and long pauses so the clip is continuous speech.
-    Keeps natural short pauses (<= `gap` seconds), stops at `max_seconds`. Returns seconds kept."""
+    Keeps natural short pauses (<= `gap` seconds), stops at `max_seconds`. Returns seconds kept.
+    fit=True only keeps whole phrases (the clip ends at a natural pause, not mid-word)."""
     import librosa
 
     y, sr = sf.read(src, dtype="float32")
@@ -24,6 +25,8 @@ def clean_reference(src, dest, max_seconds=30, gap=0.15, top_db=38):
         seg = y[max(a - pad, 0): min(b + pad, len(y))]
         if len(seg) < int(0.12 * sr):   # ignore clicks and breaths
             continue
+        if fit and pieces and total + len(seg) > max_seconds * sr:
+            break
         pieces += [seg, joiner]
         total += len(seg) + len(joiner)
         if total >= max_seconds * sr:

@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from analysis import analyze_voice, clean_reference
-from clone import XTTS_LANGS, Cancelled, Options, generate
+from clone import XTTS_LANGS, Cancelled, Options, f5_available, generate
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFS = os.path.join(ROOT, "refs")
@@ -53,9 +53,9 @@ def status():
         import torch
         cuda = torch.cuda.is_available()
         return {"cuda": cuda, "gpu": torch.cuda.get_device_name(0) if cuda else None,
-                "langs": XTTS_LANGS}
+                "langs": XTTS_LANGS, "f5": f5_available()}
     except Exception:
-        return {"cuda": False, "gpu": None, "langs": XTTS_LANGS}
+        return {"cuda": False, "gpu": None, "langs": XTTS_LANGS, "f5": f5_available()}
 
 
 @app.get("/api/voices")
@@ -136,7 +136,7 @@ class GenerateRequest(BaseModel):
     voice: str
     text: str = Field(min_length=1, max_length=20000)
     lang: str = "en"
-    engine: str = "xtts"
+    engine: str = Field("xtts", pattern="^(xtts|f5)$")
     speed: float = Field(1.0, ge=0.5, le=2.0)
     gap: float = Field(0.25, ge=0.0, le=3.0)
     para_gap: float = Field(0.6, ge=0.0, le=5.0)

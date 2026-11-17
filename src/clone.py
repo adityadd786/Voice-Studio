@@ -8,6 +8,7 @@ Only clone voices you own or have consent to use.
 import argparse
 import os
 import random
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -89,15 +90,76 @@ def synth_xtts(text, ref, lang, speed, o: Options):
     return np.asarray(out["wav"], dtype=np.float32), 24000
 
 
-def synth_f5(text, ref, speed, ref_text=""):
-    from f5_tts.api import F5TTS
-    global _F5
-    try:
-        _F5
-    except NameError:
-        _F5 = F5TTS()
-    wav, sr, _ = _F5.infer(ref_file=ref, ref_text=ref_text, gen_text=text, speed=speed)
-    return np.array(wav, dtype=np.float32), sr
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+F5_PY = os.path.join(ROOT, ".venv-f5", "Scripts", "python.exe")
+F5_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "f5_worker.py")
+F5_CACHE = os.path.join(ROOT, "cache", "f5")
+
+
+def f5_available():
+    return os.path.isfile(F5_PY)
+
+
+def _run_worker(args, **kw):
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_SYMLINKS_WARNING="1")
+    return subprocess.Popen([F5_PY, F5_WORKER, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", env=env, **kw)
+
+
+def prepare_f5_ref(path):
+    """F5 reads only ~12 s of reference and needs its exact transcript, so build a clean clip of
+    at most 10 s and transcribe that clip. Cached per voice file."""
+    from analysis import clean_reference
+    os.makedirs(F5_CACHE, exist_ok=True)
+    key = f"{os.path.splitext(os.path.basename(path))[0]}_{int(os.path.getmtime(path))}"
+    clip, txt = os.path.join(F5_CACHE, key + ".wav"), os.path.join(F5_CACHE, key + ".txt")
+    if not (os.path.isfile(clip) and os.path.isfile(txt)):
+        clean_reference(path, clip, max_seconds=10, fit=True)
+        p = _run_worker(["transcribe", clip, txt])
+        _, err = p.communicate()
+        if p.returncode != 0 or not os.path.isfile(txt):
+            raise RuntimeError(f"Transcribing the reference failed: {err[-400:]}")
+    return clip, open(txt, encoding="utf-8").read().strip()
+
+
+def synth_f5_batch(plan, resolve_voice, default_voice, o, seed, progress, cancel):
+    """Synthesize all sentences with F5-TTS in the separate environment. Returns ({plan_idx: wav}, sr)."""
+    import json
+    import tempfile
+    if not f5_available():
+        raise RuntimeError("F5-TTS is not installed (missing .venv-f5).")
+    by_voice = {}
+    for i, st in enumerate(plan):
+        if st[0] == "sent":
+            if st[3] != "en":
+                raise ValueError(f"F5-TTS supports English only (found [{st[3]}]). Use the XTTS engine for other languages.")
+            by_voice.setdefault(st[4] or default_voice, []).append(i)
+    total = sum(len(v) for v in by_voice.values()) or 1
+    audio, done, sr = {}, 0, 24000
+    for voice, idxs in by_voice.items():
+        clip, ref_text = prepare_f5_ref(resolve_voice(voice))
+        with tempfile.TemporaryDirectory() as tmp:
+            job = {"ref": clip, "ref_text": ref_text, "out_dir": tmp, "seed": seed, "nfe_step": 16,
+                   "items": [{"text": plan[i][1], "speed": plan[i][2]} for i in idxs]}
+            jp = os.path.join(tmp, "job.json")
+            json.dump(job, open(jp, "w", encoding="utf-8"))
+            p = _run_worker(["synth", jp])
+            for line in p.stdout:
+                if cancel is not None and cancel.is_set():
+                    p.kill()
+                    raise Cancelled()
+                if line.startswith("DONE"):
+                    done += 1
+                    if progress:
+                        progress(done, total)
+            err = p.stderr.read()
+            p.wait()
+            if p.returncode != 0:
+                raise RuntimeError(f"F5-TTS failed: {err[-600:]}")
+            for n, i in enumerate(idxs):
+                w, sr = sf.read(os.path.join(tmp, f"{n}.wav"), dtype="float32")
+                audio[i] = w if w.ndim == 1 else w.mean(axis=1)
+    return audio, sr
 
 
 def generate(script, resolve_voice, default_voice, o: Options, progress=None, cancel=None, ref_text=""):
@@ -109,13 +171,14 @@ def generate(script, resolve_voice, default_voice, o: Options, progress=None, ca
         torch.cuda.manual_seed_all(seed)
 
     items = parse_script(script, o.speed, o.lang, default_voice, o.pitch, o.para_gap)
-    total, done, sr, pieces = max(count_sentences(items), 1), 0, 24000, []
+
+    # 1) plan: ("pause", s) | ("sent", text, speed, lang, voice, pitch, extra_pause)
+    plan = []
     for item in items:
         if item[0] == "pause":
-            pieces.append(silence(item[1], sr))
+            plan.append(item)
             continue
         _, text, spd, lang, voice, pitch = item
-        ref = resolve_voice(voice or default_voice)
         if o.casual and lang == "en":
             text = apply_casual(text)
         if o.indian_text:
@@ -123,21 +186,38 @@ def generate(script, resolve_voice, default_voice, o: Options, progress=None, ca
         # user entries win over the built-in dictionary
         text = apply_pronunciations(text, list(o.pronunciations) + (TECH_TERMS if o.tech_terms else []))
         for sent in split_sentences(text):
+            extra, mult = smart_adjust(sent) if o.smart_pace else (0.0, 1.0)
+            plan.append(("sent", sent, max(0.3, min(spd * mult, 3.0)), lang, voice, pitch, extra))
+
+    # 2) synthesize
+    total = max(sum(1 for s in plan if s[0] == "sent"), 1)
+    sr, audio = 24000, {}
+    if o.engine == "f5":
+        audio, sr = synth_f5_batch(plan, resolve_voice, default_voice, o, seed, progress, cancel)
+    else:
+        done = 0
+        for i, st in enumerate(plan):
+            if st[0] != "sent":
+                continue
             if cancel is not None and cancel.is_set():
                 raise Cancelled()
-            extra, mult = smart_adjust(sent) if o.smart_pace else (0.0, 1.0)
-            sspd = max(0.3, min(spd * mult, 3.0))
-            if o.engine == "f5":
-                w, sr = synth_f5(sent, ref, sspd, ref_text)
-            else:
-                w, sr = synth_xtts(sent, ref, lang, sspd, o)
-            if o.trim:
-                w = trim_silence(w, sr, keep=0.08)
-            pieces.append(pitch_shift(w, sr, pitch))
-            pieces.append(silence(o.gap + extra, sr))
+            _, sent, sspd, lang, voice, _p, _e = st
+            audio[i], sr = synth_xtts(sent, resolve_voice(voice or default_voice), lang, sspd, o)
             done += 1
             if progress:
                 progress(done, total)
+
+    # 3) assemble
+    pieces = []
+    for i, st in enumerate(plan):
+        if st[0] == "pause":
+            pieces.append(silence(st[1], sr))
+            continue
+        w = audio[i]
+        if o.trim:
+            w = trim_silence(w, sr, keep=0.08)
+        pieces.append(pitch_shift(w, sr, st[5]))
+        pieces.append(silence(o.gap + st[6], sr))
 
     wav = np.concatenate(pieces) if pieces else np.zeros(1, np.float32)
     if o.duration:
