@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AudioLines, Check, Download, FileText, Loader2, Mic, Pencil, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react'
+import { Activity, Sparkles, AudioLines, Check, Download, FileText, Loader2, Mic, Pencil, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider'
 import { Toaster } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { api, type Settings, type Take, type Voice } from '@/lib/api'
+import { api, type Analysis, type Settings, type Take, type Voice } from '@/lib/api'
 import { DEFAULTS, LANGS, MARKERS, PHRASES, PRESETS, SLANG_EXAMPLES, TEMPLATES } from '@/lib/presets'
 
 type HistoryItem = { id: string; voice: string; text: string; elapsed: number; takes: Take[] }
@@ -71,6 +71,8 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [pending, setPending] = useState<File | null>(null)   // chosen but not yet saved
   const [pendingName, setPendingName] = useState('')
+  const [analysis, setAnalysis] = useState<Record<string, Analysis>>({})
+  const [analyzing, setAnalyzing] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)  // voice being renamed
   const [editName, setEditName] = useState('')
   const jobRef = useRef<string | null>(null)
@@ -133,6 +135,29 @@ export default function App() {
       const v = await api.addVoice(pendingName, pending)
       toast.success(`Saved voice "${v.name}"`)
       setPending(null)
+      await loadVoices()
+      setVoice(v.name)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  async function onAnalyze(name: string) {
+    setAnalyzing(name)
+    try {
+      const a = await api.analyze(name)
+      setAnalysis((o) => ({ ...o, [name]: a }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setAnalyzing(null)
+    }
+  }
+
+  async function onClean(name: string) {
+    try {
+      const v = await api.cleanVoice(name)
+      toast.success(`Made "${v.name}" (${v.duration}s of continuous speech)`)
       await loadVoices()
       setVoice(v.name)
     } catch (e) {
@@ -249,6 +274,24 @@ export default function App() {
                   )}
                 </div>
                 <audio controls preload="none" src={api.voiceUrl(v.name)} className="mt-2 h-8 w-full" />
+                <div className="mt-2 flex gap-2">
+                  <Button variant="outline" size="sm" disabled={analyzing === v.name} onClick={() => onAnalyze(v.name)}>
+                    {analyzing === v.name ? <Loader2 className="size-3 animate-spin" /> : <Activity className="size-3" />} Analyze
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => onClean(v.name)} title="Remove silent gaps and make a continuous speech-only copy">
+                    <Sparkles className="size-3" /> Clean up
+                  </Button>
+                </div>
+                {analysis[v.name] && (
+                  <div className="mt-2 space-y-1 rounded-md bg-muted/50 p-2 text-xs">
+                    <p>
+                      {analysis[v.name].duration_s}s · {analysis[v.name].speech_pct}% speech · noise gap {analysis[v.name].snr_db} dB
+                      {analysis[v.name].pitch.median_hz ? ` · pitch ${analysis[v.name].pitch.median_hz} Hz (${analysis[v.name].pitch.register})` : ''}
+                    </p>
+                    {analysis[v.name].digital_silence_pct > 0 && <p>Digital silence: {analysis[v.name].digital_silence_pct}%</p>}
+                    {analysis[v.name].tips.map((t) => <p key={t} className="text-muted-foreground">• {t}</p>)}
+                  </div>
+                )}
               </div>
             ))}
             <input ref={fileRef} type="file" accept="audio/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />

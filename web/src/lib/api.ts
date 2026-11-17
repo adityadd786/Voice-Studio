@@ -1,5 +1,17 @@
 export type Voice = { name: string; duration: number }
-export type Take = { file: string; seconds: number; seed: number }
+export type Analysis = {
+  duration_s: number
+  digital_silence_pct: number
+  speech_pct: number
+  snr_db: number
+  loudness_db: number
+  peak_db: number
+  clipping_pct: number
+  long_pauses: number
+  pitch: { median_hz?: number; low_hz?: number; high_hz?: number; register?: string; variation?: number }
+  tips: string[]
+}
+export type Take ={ file: string; seconds: number; seed: number }
 export type Job = {
   status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
   done: number
@@ -60,6 +72,9 @@ export const api = {
     fd.append('file', file)
     return fetch('/api/voices', { method: 'POST', body: fd }).then(json<Voice>)
   },
+  analyze: (name: string) => fetch(`/api/voices/${encodeURIComponent(name)}/analysis`).then(json<Analysis>),
+  cleanVoice: (name: string) =>
+    fetch(`/api/voices/${encodeURIComponent(name)}/clean`, { method: 'POST' }).then(json<Voice>),
   renameVoice: (name: string, newName: string) =>
     fetch(`/api/voices/${encodeURIComponent(name)}/rename`, {
       method: 'POST',
