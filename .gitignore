@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+
+# personal voice data and generated audio - never commit
+refs/
+out/
+voices/
+*.wav
+*.mp3
+*.m4a
+*.flac
