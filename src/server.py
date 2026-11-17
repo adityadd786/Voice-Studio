@@ -300,6 +300,14 @@ def need_ds(name: str) -> str:
     return n
 
 
+@app.get("/api/training/notebook")
+def training_notebook():
+    p = os.path.join(ROOT, "training", "xtts_finetune_colab.ipynb")
+    if not os.path.isfile(p):
+        raise HTTPException(404, "Notebook not found")
+    return FileResponse(p, media_type="application/x-ipynb+json", filename="xtts_finetune_colab.ipynb")
+
+
 @app.get("/api/datasets")
 def list_datasets():
     return dataset.list_datasets()
