@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import dataset
 from analysis import analyze_voice, clean_reference
-from clone import XTTS_LANGS, Cancelled, Options, f5_available, generate
+from clone import F5_PY, F5_WORKER, XTTS_LANGS, Cancelled, Options, f5_available, generate
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFS = os.path.join(ROOT, "refs")
@@ -228,6 +229,97 @@ def job_cancel(job_id: str):
     if not j:
         raise HTTPException(404, "Unknown job")
     j["cancel"].set()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- fine-tuning datasets
+def ds_name(name: str) -> str:
+    n = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip())[:40]
+    if not n:
+        raise HTTPException(400, "Invalid dataset name")
+    return n
+
+
+def need_ds(name: str) -> str:
+    n = ds_name(name)
+    if not os.path.isdir(dataset.ds_dir(n)):
+        raise HTTPException(404, f"Dataset '{name}' not found")
+    return n
+
+
+@app.get("/api/datasets")
+def list_datasets():
+    return dataset.list_datasets()
+
+
+@app.post("/api/datasets")
+def create_dataset(req: RenameRequest):
+    n = ds_name(req.name)
+    dataset.create(n)
+    return dataset.info(n)
+
+
+@app.post("/api/datasets/{name}/audio")
+async def dataset_add_audio(name: str, file: UploadFile = File(...)):
+    n = ds_name(name)
+    tmp = os.path.join(OUT, f"upload_{uuid.uuid4().hex}")
+    with open(tmp, "wb") as fh:
+        fh.write(await file.read())
+    try:
+        dataset.add_audio(n, tmp)
+    except subprocess.CalledProcessError:
+        raise HTTPException(400, "Could not read that audio file")
+    finally:
+        os.remove(tmp)
+    return dataset.info(n)
+
+
+def run_build(job_id: str, name: str):
+    job = JOBS[job_id]
+    try:
+        job["status"] = "running"
+        job["stage"] = "Cutting audio into clips"
+        clips = dataset.segment(name)
+        if not clips:
+            raise RuntimeError("No usable speech clips found (need 3 to 11 s of continuous speech).")
+        job["stage"] = "Transcribing with Whisper"
+
+        def prog(d, n):
+            job["done"], job["total"] = d, n
+
+        texts = dataset.transcribe(clips, F5_PY, F5_WORKER, prog, job["cancel"])
+        stats = dataset.write_metadata(name, clips, texts)
+        job["result"] = stats
+        job["status"] = "done"
+    except InterruptedError:
+        job["status"] = "cancelled"
+    except Exception as e:
+        job["status"], job["error"] = "error", f"{type(e).__name__}: {e}"
+
+
+@app.post("/api/datasets/{name}/build")
+def build_dataset(name: str):
+    n = need_ds(name)
+    if not f5_available():
+        raise HTTPException(400, "Whisper is not installed (missing .venv-f5).")
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"status": "queued", "done": 0, "total": 0, "result": None, "error": None,
+                    "cancel": threading.Event(), "stage": ""}
+    threading.Thread(target=run_build, args=(job_id, n), daemon=True).start()
+    return {"job": job_id}
+
+
+@app.get("/api/datasets/{name}/download")
+def download_dataset(name: str):
+    n = need_ds(name)
+    if not dataset.info(n)["built"]:
+        raise HTTPException(400, "Build the dataset first")
+    return FileResponse(dataset.export_zip(n), media_type="application/zip", filename=f"{n}.zip")
+
+
+@app.delete("/api/datasets/{name}")
+def delete_dataset(name: str):
+    dataset.delete(need_ds(name))
     return {"ok": True}
 
 
