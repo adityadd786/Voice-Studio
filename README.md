@@ -1,4 +1,4 @@
-﻿# Voice Studio
+# Voice Studio
 
 Local voice cloning (text-to-speech) with pace control, built for a 4 GB GPU.
 

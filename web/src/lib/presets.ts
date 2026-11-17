@@ -1,4 +1,4 @@
-﻿import type { Settings } from './api'
+import type { Settings } from './api'
 
 export const DEFAULTS: Settings = {
   lang: 'en', speed: 1, gap: 0.25, paraGap: 0.6, fit: false, duration: 30,

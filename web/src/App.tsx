@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AudioLines, Check, Download, FileText, Loader2, Mic, Pencil, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -205,7 +205,7 @@ export default function App() {
             <AudioLines className="size-5" />
             <h1 className="text-lg font-semibold tracking-tight">Voice Studio</h1>
           </div>
-          <Badge variant={gpu ? 'default' : 'secondary'}>{gpu === undefined ? 'Checkingâ€¦' : gpu ?? 'CPU only'}</Badge>
+          <Badge variant={gpu ? 'default' : 'secondary'}>{gpu === undefined ? 'Checking…' : gpu ?? 'CPU only'}</Badge>
         </div>
       </header>
 
@@ -213,7 +213,7 @@ export default function App() {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle>Voices</CardTitle>
-            <CardDescription>10â€“30 s of clean speech from one person. Only clone voices you have consent to use.</CardDescription>
+            <CardDescription>10–30 s of clean speech from one person. Only clone voices you have consent to use.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {voices.length === 0 && <p className="text-sm text-muted-foreground">No voices yet.</p>}
@@ -307,14 +307,14 @@ export default function App() {
                   ))}
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Hindi phrases are written in Devanagari with <code>[lang hi]</code> â€¦ <code>[lang en]</code> so they are pronounced properly.
+                  Hindi phrases are written in Devanagari with <code>[lang hi]</code> … <code>[lang en]</code> so they are pronounced properly.
                   Hindi in Roman letters would be read with English sounds.
                 </p>
               </details>
               <Textarea ref={areaRef} rows={9} value={text} onChange={(e) => setText(e.target.value)}
-                placeholder="Type what the voice should sayâ€¦" />
+                placeholder="Type what the voice should say…" />
               <p className="text-xs text-muted-foreground">
-                {stats.words} words Â· {stats.chars} characters Â· about {Math.floor(stats.secs / 60)}:{String(stats.secs % 60).padStart(2, '0')} of audio
+                {stats.words} words · {stats.chars} characters · about {Math.floor(stats.secs / 60)}:{String(stats.secs % 60).padStart(2, '0')} of audio
               </p>
             </CardContent>
           </Card>
@@ -344,7 +344,7 @@ export default function App() {
                   <AccordionContent className="space-y-5 pt-2">
                     <SliderField label="Speed" value={s.speed} min={0.5} max={2} step={0.05} disabled={s.fit}
                       fmt={(v) => `${v.toFixed(2)}x`} onChange={(v) => set('speed', v)}
-                      hint="Around 0.8â€“1.3x sounds natural. Override any part with [speed 0.9]." />
+                      hint="Around 0.8–1.3x sounds natural. Override any part with [speed 0.9]." />
                     <SliderField label="Pause between sentences" value={s.gap} min={0} max={2} step={0.05}
                       fmt={(v) => `${v.toFixed(2)}s`} onChange={(v) => set('gap', v)} />
                     <SliderField label="Pause between paragraphs" value={s.paraGap} min={0} max={4} step={0.1}
@@ -364,13 +364,13 @@ export default function App() {
                   <AccordionTrigger>Course & explanation style</AccordionTrigger>
                   <AccordionContent className="space-y-5 pt-2">
                     <SwitchField label="Teaching-style pacing" checked={s.smartPace} onChange={(v) => set('smartPace', v)}
-                      hint="Pauses after questions and colons, a longer pause at â€œâ€¦â€, and slightly slower delivery for definitions and key points (â€œfor exampleâ€, â€œrememberâ€, â€œstep 2â€)." />
+                      hint="Pauses after questions and colons, a longer pause at “…”, and slightly slower delivery for definitions and key points (“for example”, “remember”, “step 2”)." />
                     <SwitchField label="Tech & course terms" checked={s.techTerms} onChange={(v) => set('techTerms', v)}
                       hint="Reads API, SQL, AWS, UPI, GST, GitHub, Kubernetes and similar terms correctly. Your own dictionary entries win." />
                     <SwitchField label="Indian amounts (lakh / crore)" checked={s.indianText} onChange={(v) => set('indianText', v)}
-                      hint="â‚¹5,00,000 is read as â€œfive lakh rupeesâ€ and Rs. 2.5 crore as â€œtwo point five crore rupeesâ€." />
+                      hint="₹5,00,000 is read as “five lakh rupees” and Rs. 2.5 crore as “two point five crore rupees”." />
                     <SwitchField label="Casual speech (English)" checked={s.casual} onChange={(v) => set('casual', v)}
-                      hint="â€œgoing toâ€ becomes â€œgonnaâ€, â€œwant toâ€ becomes â€œwannaâ€, and so on." />
+                      hint="“going to” becomes “gonna”, “want to” becomes “wanna”, and so on." />
                     <p className="text-xs text-muted-foreground">
                       Tip: write for the ear. Short sentences, one idea each, read much better than long ones. Listen once, then fix the places that sound rushed with a <code>[pause]</code> or <code>[speed 0.9]</code>.
                     </p>
@@ -423,7 +423,7 @@ export default function App() {
                 <AccordionItem value="output">
                   <AccordionTrigger>Output</AccordionTrigger>
                   <AccordionContent className="space-y-5 pt-2">
-                    <SwitchField label="Normalize loudness" hint="Even volume, about âˆ’16 LUFS (typical for video and podcasts)."
+                    <SwitchField label="Normalize loudness" hint="Even volume, about −16 LUFS (typical for video and podcasts)."
                       checked={s.normalize} onChange={(v) => set('normalize', v)} />
                     <SliderField label="Volume" value={s.gainDb} min={-12} max={12} step={1}
                       fmt={(v) => `${v > 0 ? '+' : ''}${v} dB`} onChange={(v) => set('gainDb', v)} />
@@ -476,14 +476,14 @@ export default function App() {
                   <Progress value={progress.total ? pct : null} />
                   <p className="text-xs text-muted-foreground">
                     {progress.status === 'queued' || !progress.total
-                      ? 'Loading model and analysing the voiceâ€¦'
+                      ? 'Loading model and analysing the voice…'
                       : `Sentence ${progress.done} of ${progress.total} (${pct}%)`}
                   </p>
                 </div>
               )}
               <div className="flex gap-2">
                 <Button onClick={onGenerate} disabled={busy || !text.trim() || !voice} className="flex-1">
-                  {busy ? <><Loader2 className="size-4 animate-spin" /> Generatingâ€¦</> : 'Generate'}
+                  {busy ? <><Loader2 className="size-4 animate-spin" /> Generating…</> : 'Generate'}
                 </Button>
                 {busy && (
                   <Button variant="outline" onClick={() => jobRef.current && api.cancel(jobRef.current)}>
@@ -506,8 +506,8 @@ export default function App() {
                         <audio controls src={api.audioUrl(t.file)} className="w-full" />
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <span>
-                            {h.takes.length > 1 ? `Take ${i + 1} Â· ` : ''}{h.voice} Â· {t.seconds}s Â· seed {t.seed}
-                            {i === 0 ? ` Â· made in ${h.elapsed}s` : ''}
+                            {h.takes.length > 1 ? `Take ${i + 1} · ` : ''}{h.voice} · {t.seconds}s · seed {t.seed}
+                            {i === 0 ? ` · made in ${h.elapsed}s` : ''}
                           </span>
                           <a href={api.audioUrl(t.file)} download={t.file} className="inline-flex items-center gap-1 text-foreground underline">
                             <Download className="size-3" /> Download

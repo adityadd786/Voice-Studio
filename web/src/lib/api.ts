@@ -1,4 +1,4 @@
-﻿export type Voice = { name: string; duration: number }
+export type Voice = { name: string; duration: number }
 export type Take = { file: string; seconds: number; seed: number }
 export type Job = {
   status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
