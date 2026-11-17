@@ -11,17 +11,22 @@ export type Analysis = {
   pitch: { median_hz?: number; low_hz?: number; high_hz?: number; register?: string; variation?: number }
   tips: string[]
 }
-export type Take ={ file: string; seconds: number; seed: number }
+export type Dataset = { name: string; raw_minutes: number; segments: number; minutes: number; built: boolean }
+export type ModelInfo = { name: string; size_mb: number }
+export type Take = { file: string; seconds: number; seed: number }
 export type Job = {
   status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
   done: number
   total: number
-  result: { takes: Take[]; elapsed: number } | null
+  stage?: string
+  // generation jobs return takes; dataset-build jobs return segment stats
+  result: ({ takes: Take[]; elapsed: number } & { segments?: number; minutes?: number }) | null
   error: string | null
 }
 
 export type Settings = {
   engine: 'xtts' | 'f5'
+  model: string // "base" or a fine-tuned model name
   lang: string
   speed: number
   gap: number
@@ -89,7 +94,7 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        voice, text, engine: s.engine, lang: s.lang, speed: s.speed, gap: s.gap, para_gap: s.paraGap,
+        voice, text, engine: s.engine, model: s.model, lang: s.lang, speed: s.speed, gap: s.gap, para_gap: s.paraGap,
         duration: s.fit ? s.duration : null, temperature: s.temperature, top_p: s.topP, top_k: s.topK,
         repetition_penalty: s.repetitionPenalty, seed: s.seed.trim() === '' ? null : Number(s.seed),
         ref_seconds: s.refSeconds, pitch: s.pitch, gain_db: s.gainDb, normalize: s.normalize,
@@ -97,6 +102,34 @@ export const api = {
         takes: s.takes, format: s.format,
       }),
     }).then(json<{ job: string }>),
+  // ---- fine-tuning datasets and models
+  datasets: () => fetch('/api/datasets').then(json<Dataset[]>),
+  createDataset: (name: string) =>
+    fetch('/api/datasets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(json<Dataset>),
+  addDatasetAudio: (name: string, file: Blob, filename: string) => {
+    const fd = new FormData()
+    fd.append('file', file, filename)
+    return fetch(`/api/datasets/${encodeURIComponent(name)}/audio`, { method: 'POST', body: fd }).then(json<Dataset>)
+  },
+  buildDataset: (name: string) =>
+    fetch(`/api/datasets/${encodeURIComponent(name)}/build`, { method: 'POST' }).then(json<{ job: string }>),
+  deleteDataset: (name: string) =>
+    fetch(`/api/datasets/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
+  datasetZipUrl: (name: string) => `/api/datasets/${encodeURIComponent(name)}/download`,
+  notebookUrl: () => '/api/training/notebook',
+  models: () => fetch('/api/models').then(json<ModelInfo[]>),
+  importModel: (name: string, file: File) => {
+    const fd = new FormData()
+    fd.append('name', name)
+    fd.append('file', file)
+    return fetch('/api/models', { method: 'POST', body: fd }).then(json<{ name: string }>)
+  },
+  deleteModel: (name: string) =>
+    fetch(`/api/models/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
   job: (id: string) => fetch(`/api/jobs/${id}`).then(json<Job>),
   cancel: (id: string) => fetch(`/api/jobs/${id}/cancel`, { method: 'POST' }).then(json<{ ok: boolean }>),
   audioUrl: (file: string) => `/api/audio/${encodeURIComponent(file)}`,
