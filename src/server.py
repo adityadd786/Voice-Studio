@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from analysis import analyze_voice, clean_reference
 from clone import XTTS_LANGS, Cancelled, Options, generate
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -106,6 +107,24 @@ def rename_voice(name: str, req: RenameRequest):
         raise HTTPException(409, f"A voice named '{new}' already exists")
     os.replace(src, dest)
     return {"name": new, "duration": round(sf.info(dest).duration, 1)}
+
+
+@app.get("/api/voices/{name}/analysis")
+def voice_analysis(name: str):
+    return analyze_voice(voice_path(name))
+
+
+@app.post("/api/voices/{name}/clean")
+def clean_voice(name: str):
+    """Make a continuous speech-only copy of a voice as '<name> clean'."""
+    src = voice_path(name)
+    new = safe_name(f"{name} clean")
+    dest = os.path.join(REFS, new + ".wav")
+    try:
+        secs = clean_reference(src, dest)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"name": new, "duration": round(secs, 1)}
 
 
 @app.get("/api/voices/{name}/audio")
