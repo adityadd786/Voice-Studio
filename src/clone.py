@@ -16,9 +16,9 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pace import (apply_casual, apply_pronunciations, count_sentences, normalize_loudness,  # noqa: E402
-                  parse_script, pitch_shift, silence, speed_for_duration, split_sentences,
-                  time_stretch, trim_silence)
+from pace import (TECH_TERMS, apply_casual, apply_indian_text, apply_pronunciations,  # noqa: E402
+                  count_sentences, normalize_loudness, parse_script, pitch_shift, silence,
+                  smart_adjust, speed_for_duration, split_sentences, time_stretch, trim_silence)
 
 XTTS_LANGS = ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar",
               "zh-cn", "ja", "hu", "ko", "hi"]
@@ -50,6 +50,9 @@ class Options:
     trim: bool = True
     # text shaping
     casual: bool = False
+    indian_text: bool = False    # ₹ amounts in lakh/crore
+    tech_terms: bool = False     # built-in acronym/tech dictionary
+    smart_pace: bool = False     # teaching-style pauses and slower definitions
     pronunciations: list = field(default_factory=list)  # [(find, say), ...]
 
 
@@ -115,18 +118,23 @@ def generate(script, resolve_voice, default_voice, o: Options, progress=None, ca
         ref = resolve_voice(voice or default_voice)
         if o.casual and lang == "en":
             text = apply_casual(text)
-        text = apply_pronunciations(text, o.pronunciations)
+        if o.indian_text:
+            text = apply_indian_text(text)
+        # user entries win over the built-in dictionary
+        text = apply_pronunciations(text, list(o.pronunciations) + (TECH_TERMS if o.tech_terms else []))
         for sent in split_sentences(text):
             if cancel is not None and cancel.is_set():
                 raise Cancelled()
+            extra, mult = smart_adjust(sent) if o.smart_pace else (0.0, 1.0)
+            sspd = max(0.3, min(spd * mult, 3.0))
             if o.engine == "f5":
-                w, sr = synth_f5(sent, ref, spd, ref_text)
+                w, sr = synth_f5(sent, ref, sspd, ref_text)
             else:
-                w, sr = synth_xtts(sent, ref, lang, spd, o)
+                w, sr = synth_xtts(sent, ref, lang, sspd, o)
             if o.trim:
                 w = trim_silence(w, sr, keep=0.08)
             pieces.append(pitch_shift(w, sr, pitch))
-            pieces.append(silence(o.gap, sr))
+            pieces.append(silence(o.gap + extra, sr))
             done += 1
             if progress:
                 progress(done, total)

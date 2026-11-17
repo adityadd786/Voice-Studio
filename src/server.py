@@ -117,6 +117,9 @@ class GenerateRequest(BaseModel):
     normalize: bool = False
     trim: bool = True
     casual: bool = False
+    indian_text: bool = False
+    tech_terms: bool = False
+    smart_pace: bool = False
     pronunciations: list[tuple[str, str]] = []
     takes: int = Field(1, ge=1, le=4)
     format: str = Field("wav", pattern="^(wav|mp3)$")
@@ -138,7 +141,8 @@ def run_job(job_id: str, req: GenerateRequest):
                     repetition_penalty=req.repetition_penalty,
                     seed=None if req.seed is None else req.seed + i, ref_seconds=req.ref_seconds,
                     pitch=req.pitch, gain_db=req.gain_db, normalize=req.normalize, trim=req.trim,
-                    casual=req.casual, pronunciations=req.pronunciations)
+                    casual=req.casual, indian_text=req.indian_text, tech_terms=req.tech_terms,
+                    smart_pace=req.smart_pace, pronunciations=req.pronunciations)
 
                 def progress(done, total, i=i):
                     job["done"], job["total"] = i * total + done, req.takes * total
