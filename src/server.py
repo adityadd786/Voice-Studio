@@ -1,6 +1,7 @@
 """FastAPI backend for Voice Studio. Run: uvicorn server:app --app-dir src --port 8000"""
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -14,7 +15,8 @@ from pydantic import BaseModel, Field
 
 import dataset
 from analysis import analyze_voice, clean_reference
-from clone import F5_PY, F5_WORKER, XTTS_LANGS, Cancelled, Options, f5_available, generate
+from clone import (F5_PY, F5_WORKER, MODEL_FILES, MODELS_DIR, XTTS_LANGS, Cancelled, Options,
+                   f5_available, generate, list_models)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFS = os.path.join(ROOT, "refs")
@@ -138,6 +140,7 @@ class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     lang: str = "en"
     engine: str = Field("xtts", pattern="^(xtts|f5)$")
+    model: str = Field("base", max_length=40)
     speed: float = Field(1.0, ge=0.5, le=2.0)
     gap: float = Field(0.25, ge=0.0, le=3.0)
     para_gap: float = Field(0.6, ge=0.0, le=5.0)
@@ -172,7 +175,7 @@ def run_job(job_id: str, req: GenerateRequest):
             takes = []
             for i in range(req.takes):
                 o = Options(
-                    lang=req.lang, engine=req.engine, speed=req.speed, gap=req.gap, para_gap=req.para_gap,
+                    lang=req.lang, engine=req.engine, model=req.model, speed=req.speed, gap=req.gap, para_gap=req.para_gap,
                     duration=req.duration, temperature=req.temperature, top_p=req.top_p, top_k=req.top_k,
                     repetition_penalty=req.repetition_penalty,
                     seed=None if req.seed is None else req.seed + i, ref_seconds=req.ref_seconds,
@@ -208,6 +211,8 @@ def run_job(job_id: str, req: GenerateRequest):
 @app.post("/api/generate")
 def start_generate(req: GenerateRequest):
     voice_path(req.voice)  # validate early
+    if req.model != "base" and not os.path.isdir(model_dir(req.model)):
+        raise HTTPException(404, f"Model '{req.model}' not found")
     job_id = uuid.uuid4().hex[:12]
     JOBS[job_id] = {"status": "queued", "done": 0, "total": 0, "result": None, "error": None,
                     "cancel": threading.Event()}
@@ -229,6 +234,54 @@ def job_cancel(job_id: str):
     if not j:
         raise HTTPException(404, "Unknown job")
     j["cancel"].set()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- fine-tuned models
+def model_dir(name: str) -> str:
+    n = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip())[:40]
+    if not n or n == "base":
+        raise HTTPException(400, "Invalid model name")
+    return os.path.join(MODELS_DIR, n)
+
+
+@app.get("/api/models")
+def get_models():
+    return list_models()
+
+
+@app.post("/api/models")
+async def import_model(name: str = Form(...), file: UploadFile = File(...)):
+    """Import finetuned_xtts.zip (model.pth, config.json, vocab.json, speakers_xtts.pth)."""
+    import zipfile
+    d = model_dir(name)
+    tmp = os.path.join(OUT, f"upload_{uuid.uuid4().hex}.zip")
+    with open(tmp, "wb") as fh:
+        while chunk := await file.read(1 << 20):   # model is ~2 GB: stream it
+            fh.write(chunk)
+    try:
+        with zipfile.ZipFile(tmp) as z:
+            members = {os.path.basename(m): m for m in z.namelist() if not m.endswith("/")}
+            missing = [f for f in MODEL_FILES if f not in members]
+            if missing:
+                raise HTTPException(400, f"Zip is missing: {', '.join(missing)}")
+            os.makedirs(d, exist_ok=True)
+            for f in MODEL_FILES:   # only known filenames are extracted: no path tricks
+                with z.open(members[f]) as src, open(os.path.join(d, f), "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "That is not a valid zip file")
+    finally:
+        os.remove(tmp)
+    return {"name": os.path.basename(d)}
+
+
+@app.delete("/api/models/{name}")
+def delete_model(name: str):
+    d = model_dir(name)
+    if not os.path.isdir(d):
+        raise HTTPException(404, "Model not found")
+    shutil.rmtree(d)
     return {"ok": True}
 
 
