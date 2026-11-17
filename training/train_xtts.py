@@ -29,9 +29,10 @@ def main():
     ap.add_argument("--data", required=True, help="dataset folder (metadata_*.csv + wavs/)")
     ap.add_argument("--out", default="run", help="output folder")
     ap.add_argument("--lang", default="en")
-    ap.add_argument("--epochs", type=int, default=8)
+    ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--batch", type=int, default=2, help="per-step batch size (2 fits a 16 GB T4)")
-    ap.add_argument("--grad-accum", type=int, default=8, help="gradient accumulation steps")
+    ap.add_argument("--grad-accum", type=int, default=2,
+                    help="gradient accumulation steps (small = more updates, right for small datasets)")
     ap.add_argument("--lr", type=float, default=5e-6)
     ap.add_argument("--test-text", default="This is a test of my fine tuned voice. How does it sound?")
     ap.add_argument("--dry-run", action="store_true",
