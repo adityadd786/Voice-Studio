@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AudioLines, Download, FileText, Loader2, Mic, RotateCcw, Square, Trash2, Upload } from 'lucide-react'
+import { AudioLines, Check, Download, FileText, Loader2, Mic, Pencil, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
@@ -69,6 +69,10 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0, status: '' })
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [pending, setPending] = useState<File | null>(null)   // chosen but not yet saved
+  const [pendingName, setPendingName] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)  // voice being renamed
+  const [editName, setEditName] = useState('')
   const jobRef = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const txtRef = useRef<HTMLInputElement>(null)
@@ -116,18 +120,38 @@ export default function App() {
     })
   }
 
-  async function onUpload(file: File | undefined) {
+  function onPick(file: File | undefined) {
     if (!file) return
-    const name = file.name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'voice'
+    setPending(file)
+    setPendingName(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 40) || 'My voice')
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function onSaveUpload() {
+    if (!pending || !pendingName.trim()) return
     try {
-      await api.addVoice(name, file)
-      toast.success(`Voice "${name}" added`)
+      const v = await api.addVoice(pendingName, pending)
+      toast.success(`Saved voice "${v.name}"`)
+      setPending(null)
       await loadVoices()
-      setVoice(name)
+      setVoice(v.name)
     } catch (e) {
       toast.error((e as Error).message)
     }
-    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function onRename(oldName: string) {
+    const target = editName.trim()
+    if (!target || target === oldName) return setEditing(null)
+    try {
+      const v = await api.renameVoice(oldName, target)
+      toast.success(`Renamed to "${v.name}". Update any [voice ${oldName}] markers in your script.`)
+      setEditing(null)
+      await loadVoices()
+      if (voice === oldName) setVoice(v.name)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
   }
 
   async function onDelete(name: string) {
@@ -196,21 +220,55 @@ export default function App() {
             {voices.map((v) => (
               <div key={v.name} className={`rounded-lg border p-3 ${voice === v.name ? 'border-primary' : ''}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <button className="flex min-w-0 items-center gap-2 text-left text-sm font-medium" onClick={() => setVoice(v.name)}>
-                    <Mic className="size-4 shrink-0" /> <span className="truncate">{v.name}</span>
-                    <span className="text-xs font-normal text-muted-foreground">{v.duration}s</span>
-                  </button>
-                  <Button variant="ghost" size="icon" aria-label={`Delete ${v.name}`} onClick={() => onDelete(v.name)}>
-                    <Trash2 className="size-4" />
-                  </Button>
+                  {editing === v.name ? (
+                    <>
+                      <Input autoFocus value={editName} maxLength={40} aria-label="Voice name"
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') onRename(v.name); if (e.key === 'Escape') setEditing(null) }} />
+                      <Button variant="ghost" size="icon" aria-label="Save name" onClick={() => onRename(v.name)}>
+                        <Check className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" aria-label="Cancel rename" onClick={() => setEditing(null)}>
+                        <X className="size-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium" onClick={() => setVoice(v.name)}>
+                        <Mic className="size-4 shrink-0" /> <span className="truncate">{v.name}</span>
+                        <span className="text-xs font-normal text-muted-foreground">{v.duration}s</span>
+                      </button>
+                      <Button variant="ghost" size="icon" aria-label={`Rename ${v.name}`}
+                        onClick={() => { setEditing(v.name); setEditName(v.name) }}>
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" aria-label={`Delete ${v.name}`} onClick={() => onDelete(v.name)}>
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </>
+                  )}
                 </div>
                 <audio controls preload="none" src={api.voiceUrl(v.name)} className="mt-2 h-8 w-full" />
               </div>
             ))}
-            <input ref={fileRef} type="file" accept="audio/*" hidden onChange={(e) => onUpload(e.target.files?.[0])} />
-            <Button variant="outline" className="w-full" onClick={() => fileRef.current?.click()}>
-              <Upload className="size-4" /> Upload voice
-            </Button>
+            <input ref={fileRef} type="file" accept="audio/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
+            {pending ? (
+              <div className="space-y-2 rounded-lg border border-dashed p-3">
+                <Label>Name this voice</Label>
+                <Input autoFocus value={pendingName} maxLength={40}
+                  onChange={(e) => setPendingName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onSaveUpload(); if (e.key === 'Escape') setPending(null) }} />
+                <p className="truncate text-xs text-muted-foreground">File: {pending.name}</p>
+                <div className="flex gap-2">
+                  <Button className="flex-1" disabled={!pendingName.trim()} onClick={onSaveUpload}>Save voice</Button>
+                  <Button variant="outline" onClick={() => setPending(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="outline" className="w-full" onClick={() => fileRef.current?.click()}>
+                <Upload className="size-4" /> Upload voice
+              </Button>
+            )}
             <p className="text-xs text-muted-foreground">
               Use <code>[voice name]</code> in the script to switch between voices mid-text.
             </p>

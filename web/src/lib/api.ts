@@ -60,6 +60,12 @@ export const api = {
     fd.append('file', file)
     return fetch('/api/voices', { method: 'POST', body: fd }).then(json<Voice>)
   },
+  renameVoice: (name: string, newName: string) =>
+    fetch(`/api/voices/${encodeURIComponent(name)}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    }).then(json<Voice>),
   deleteVoice: (name: string) =>
     fetch(`/api/voices/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
   generate: (voice: string, text: string, s: Settings) =>
