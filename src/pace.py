@@ -31,6 +31,60 @@ def apply_casual(text):
     return text
 
 
+# Tech / course terms that TTS usually mangles. Used when "Tech & course terms" is on.
+TECH_TERMS = [
+    ("API", "A P I"), ("APIs", "A P Is"), ("SQL", "sequel"), ("NoSQL", "no sequel"), ("AWS", "A W S"),
+    ("CPU", "C P U"), ("GPU", "G P U"), ("RAM", "ram"), ("UI", "U I"), ("UX", "U X"),
+    ("HTML", "H T M L"), ("CSS", "C S S"), ("JSON", "jay-son"), ("URL", "U R L"), ("HTTP", "H T T P"),
+    ("HTTPS", "H T T P S"), ("IDE", "I D E"), ("AI", "A I"), ("ML", "M L"), ("LLM", "L L M"),
+    ("OTP", "O T P"), ("PDF", "P D F"), ("FAQ", "F A Q"), ("GST", "G S T"), ("PAN", "pan"),
+    ("UPI", "U P I"), ("KYC", "K Y C"), ("IIT", "I I T"), ("CEO", "C E O"), ("ROI", "R O I"),
+    ("GitHub", "git hub"), ("Linux", "linnux"), ("Kubernetes", "koo-ber-net-eez"), ("nginx", "engine X"),
+    ("IdentityIQ", "Identity I Q"), ("Tomcat", "tom cat"), ("e.g.", "for example"), ("i.e.", "that is"),
+    ("vs", "versus"), ("etc.", "et cetera"),
+]
+
+_AMOUNT = re.compile(
+    r"(?:₹|Rs\.?|INR)\s?(\d(?:[\d,]*\d)?(?:\.\d+)?)(?:\s?(lakhs?|crores?|cr|thousand|k)\b)?", re.I)
+
+
+def _amount(m):
+    from num2words import num2words
+    num = float(m.group(1).replace(",", ""))
+    unit = (m.group(2) or "").lower()
+    unit_word = {"lakh": "lakh", "lakhs": "lakh", "crore": "crore", "crores": "crore", "cr": "crore",
+                 "thousand": "thousand", "k": "thousand"}.get(unit, "")
+    n = int(num) if num == int(num) else num
+    return f"{num2words(n, lang='en_IN')} {unit_word} rupees".replace("  ", " ")
+
+
+def apply_indian_text(text):
+    """Read ₹/Rs amounts the Indian way: ₹5,00,000 -> five lakh rupees."""
+    return _AMOUNT.sub(_amount, text)
+
+
+_CUES = re.compile(
+    r"\b(for example|for instance|in other words|is called|means|definition|remember|important|"
+    r"note that|step \d+|first|second|third|finally|key point)\b", re.I)
+
+
+def smart_adjust(sentence):
+    """Teaching-style pacing: returns (extra_pause_seconds, speed_multiplier)."""
+    extra, mult = 0.0, 1.0
+    s = sentence.strip()
+    if s.endswith("?"):
+        extra = 0.35          # let a question land
+    elif s.endswith(":"):
+        extra = 0.3
+    if "..." in s or "…" in s:
+        extra = max(extra, 0.4)
+    if _CUES.search(s):
+        mult = 0.93           # slow slightly for definitions and key points
+    if len(s.split()) <= 3:
+        extra = max(extra, 0.12)
+    return extra, mult
+
+
 def apply_pronunciations(text, pairs):
     """pairs: list of (find, say). Whole-word, case-insensitive."""
     for find, say in pairs:
@@ -77,18 +131,36 @@ def parse_script(text, default_speed=1.0, default_lang="en", default_voice=None,
     return items
 
 
-def split_sentences(text, max_chars=220):
-    """Split into sentence-sized chunks to keep VRAM low."""
-    parts = re.split(r"(?<=[.!?।。！？])\s+", text.strip())
-    out, cur = [], ""
+def split_sentences(text, max_chars=220, min_chars=10):
+    """One chunk per sentence so pauses and pacing apply per sentence.
+    Very short sentences ("Okay.") are joined to the next one (tiny inputs make XTTS glitch);
+    sentences over max_chars are split at commas to keep VRAM low."""
+    parts = [p for p in re.split(r"(?<=[.!?।。！？])\s+", text.strip()) if p]
+    sized = []
     for p in parts:
-        if cur and len(cur) + len(p) + 1 > max_chars:
-            out.append(cur)
-            cur = p
+        while len(p) > max_chars:
+            cut = p.rfind(",", 0, max_chars)
+            if cut < max_chars // 3:
+                cut = p.rfind(" ", 0, max_chars)
+            if cut <= 0:
+                cut = max_chars
+            sized.append(p[:cut + 1].strip())
+            p = p[cut + 1:].strip()
+        if p:
+            sized.append(p)
+    out, carry = [], ""
+    for p in sized:
+        p = f"{carry} {p}".strip() if carry else p
+        carry = ""
+        if len(p) < min_chars:
+            carry = p
         else:
-            cur = f"{cur} {p}".strip()
-    if cur:
-        out.append(cur)
+            out.append(p)
+    if carry:
+        if out:
+            out[-1] = f"{out[-1]} {carry}"
+        else:
+            out.append(carry)
     return out
 
 
