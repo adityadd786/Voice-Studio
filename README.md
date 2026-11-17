@@ -16,7 +16,7 @@ Two terminals:
 ```
 # 1) API (from project root, venv active)
 $env:COQUI_TOS_AGREED="1"   # PowerShell
-uvicorn server:app --app-dir src --port 8000
+uvicorn server:app --app-dir src --port 8010
 
 # 2) Frontend
 cd web
